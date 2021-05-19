@@ -1,0 +1,16 @@
+{application, yshtola,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {yshtola_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    discordant
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["The Unlicense"]},
+  {links, []}
+ ]}.
