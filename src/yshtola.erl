@@ -15,8 +15,16 @@ set_role(RoleNameParts, Api,
             {reply, <<"no such role ", RoleName/binary>>, []}
     end.
 
-unset_role(_RoleNameParts, _Api, _Msg) ->
-    throw(not_implemented).
+unset_role(RoleNameParts, Api,
+         #{<<"author">> := #{<<"id">> := UserId}, <<"guild_id">> := GuildId}) ->
+    RoleName = binary_join(lists:join(<<" ">>, RoleNameParts)),
+    case valid_role(RoleName) of
+        true ->
+            unset_role(UserId, GuildId, RoleName, Api),
+            {reply, <<"role ", RoleName/binary, " removed">>, []};
+        false ->
+            {reply, <<"no such role ", RoleName/binary>>, []}
+    end.
 
 get_roles(_Args, Api, Msg) ->
     #{<<"guild_id">> := GuildId} = Msg,
@@ -84,3 +92,7 @@ get_role_id(GuildId, RoleName, Api) ->
     Fn = fun(#{<<"name">> := Name}) -> Name =:= RoleName end,
     [#{<<"id">> := RoleId}] = lists:filter(Fn, Roles),
     RoleId.
+
+unset_role(UserId, GuildId, RoleName, Api) ->
+    RoleId = get_role_id(GuildId, RoleName, Api),
+    discord_api:remove_member_role(Api, GuildId, UserId, RoleId).

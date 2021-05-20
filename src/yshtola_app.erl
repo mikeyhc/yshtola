@@ -20,6 +20,9 @@ start(_StartType, _StartArgs) ->
          },
       <<"set">> => #{
           call => {yshtola, set_role, []}
+         },
+      <<"unset">> => #{
+          call => {yshtola, unset_role, []}
          }
      },
     discordant:connect(Token),
