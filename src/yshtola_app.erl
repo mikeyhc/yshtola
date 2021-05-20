@@ -17,6 +17,9 @@ start(_StartType, _StartArgs) ->
     Msgs = #{
       <<"roles">> => #{
           call => {yshtola, get_roles, []}
+         },
+      <<"set">> => #{
+          call => {yshtola, set_role, []}
          }
      },
     discordant:connect(Token),

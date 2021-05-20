@@ -1,13 +1,22 @@
 -module(yshtola).
 
--export([get_roles/3]).
+-export([get_roles/3, set_role/3, unset_role/3]).
 
-ff_roles(#{<<"name">> := <<"Tank">>}) -> true;
-ff_roles(#{<<"name">> := <<"Healer">>}) -> true;
-ff_roles(#{<<"name">> := <<"Melee DPS">>}) -> true;
-ff_roles(#{<<"name">> := <<"Phys Ranged">>}) -> true;
-ff_roles(#{<<"name">> := <<"Caster DPS">>}) -> true;
-ff_roles(_) -> false.
+%% public API
+
+set_role(RoleNameParts, Api,
+         #{<<"author">> := #{<<"id">> := UserId}, <<"guild_id">> := GuildId}) ->
+    RoleName = binary_join(lists:join(<<" ">>, RoleNameParts)),
+    case valid_role(RoleName) of
+        true ->
+            set_role(UserId, GuildId, RoleName, Api),
+            {reply, <<"role ", RoleName/binary, " added">>, []};
+        false ->
+            {reply, <<"no such role ", RoleName/binary>>, []}
+    end.
+
+unset_role(_RoleNameParts, _Api, _Msg) ->
+    throw(not_implemented).
 
 get_roles(_Args, Api, Msg) ->
     #{<<"guild_id">> := GuildId} = Msg,
@@ -19,6 +28,23 @@ get_roles(_Args, Api, Msg) ->
     end,
     RoleToMember = maps:from_list(lists:map(Fn, FFRoles)),
     {reply, build_roles_reply(RoleToMember), []}.
+
+%% internal functions
+
+valid_role(<<"Tank">>) -> true;
+valid_role(<<"Healer">>) -> true;
+valid_role(<<"Melee DPS">>) -> true;
+valid_role(<<"Phys Ranged">>) -> true;
+valid_role(<<"Caster DPS">>) -> true;
+valid_role(<<"Available">>) -> true;
+valid_role(_) -> false.
+
+ff_roles(#{<<"name">> := <<"Tank">>}) -> true;
+ff_roles(#{<<"name">> := <<"Healer">>}) -> true;
+ff_roles(#{<<"name">> := <<"Melee DPS">>}) -> true;
+ff_roles(#{<<"name">> := <<"Phys Ranged">>}) -> true;
+ff_roles(#{<<"name">> := <<"Caster DPS">>}) -> true;
+ff_roles(_) -> false.
 
 get_username(#{<<"user">> := #{<<"username">> := Username}}) -> Username.
 
@@ -48,3 +74,13 @@ build_role_reply(Role, RoleToMember) ->
             R1 = binary_join(lists:join(<<"\n">>, [Role|R0])),
             <<R1/binary, "\n\n">>
     end.
+
+set_role(UserId, GuildId, RoleName, Api) ->
+    RoleId = get_role_id(GuildId, RoleName, Api),
+    discord_api:add_member_role(Api, GuildId, UserId, RoleId).
+
+get_role_id(GuildId, RoleName, Api) ->
+    Roles = discord_api:get_roles(Api, GuildId),
+    Fn = fun(#{<<"name">> := Name}) -> Name =:= RoleName end,
+    [#{<<"id">> := RoleId}] = lists:filter(Fn, Roles),
+    RoleId.
