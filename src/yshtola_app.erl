@@ -23,6 +23,9 @@ start(_StartType, _StartArgs) ->
          },
       <<"unset">> => #{
           call => {yshtola, unset_role, []}
+         },
+      <<"static">> => #{
+          call => {yshtola, static, []}
          }
      },
     discordant:connect(Token),

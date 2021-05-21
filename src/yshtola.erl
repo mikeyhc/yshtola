@@ -1,6 +1,8 @@
 -module(yshtola).
 
--export([get_roles/3, set_role/3, unset_role/3]).
+-export([get_roles/3, set_role/3, unset_role/3, static/3]).
+
+-define(MAX_STATIC_SIZE, 8).
 
 %% public API
 
@@ -26,33 +28,48 @@ unset_role(RoleNameParts, Api,
             {reply, <<"no such role ", RoleName/binary>>, []}
     end.
 
-get_roles(_Args, Api, Msg) ->
-    #{<<"guild_id">> := GuildId} = Msg,
+get_roles(_Args, Api, #{<<"guild_id">> := GuildId}) ->
+    RoleToMember = role_members(Api, GuildId),
+    {reply, build_roles_reply(RoleToMember), []}.
+
+static(_Args, Api, #{<<"guild_id">> := GuildId}) ->
     Roles = discord_api:get_roles(Api, GuildId),
-    FFRoles = lists:filter(fun ff_roles/1, Roles),
+    Members = discord_api:get_guild_members(Api, GuildId),
+    {IsAvailable, ToNameWithRole} = create_role_functions(Roles),
+    AvailableMembers = lists:filter(IsAvailable, Members),
+    RoledMembers = lists:map(ToNameWithRole, AvailableMembers),
+    SortedMembers = lists:sublist(random_sort(RoledMembers), ?MAX_STATIC_SIZE),
+    case random_sort(top_scoring(build_statics(SortedMembers))) of
+        [] -> {reply, <<"no possible statics available">>, []};
+        [Static|_] ->
+            {reply, render_static(Static), []}
+    end.
+
+%% internal functions
+
+role_members(Api, GuildId) ->
+    Roles = discord_api:get_roles(Api, GuildId),
+    FFRoles = lists:filter(fun ff_named_role/1, Roles),
     Members = discord_api:get_guild_members(Api, GuildId),
     Fn = fun(#{<<"name">> := Name, <<"id">> := Id}) ->
         {Name, find_members(Id, Members)}
     end,
-    RoleToMember = maps:from_list(lists:map(Fn, FFRoles)),
-    {reply, build_roles_reply(RoleToMember), []}.
+    maps:from_list(lists:map(Fn, FFRoles)).
 
-%% internal functions
+ff_roles() -> [<<"Tank">>, <<"Healer">>, <<"Melee DPS">>, <<"Phys Ranged">>,
+               <<"Caster DPS">>].
 
-valid_role(<<"Tank">>) -> true;
-valid_role(<<"Healer">>) -> true;
-valid_role(<<"Melee DPS">>) -> true;
-valid_role(<<"Phys Ranged">>) -> true;
-valid_role(<<"Caster DPS">>) -> true;
-valid_role(<<"Available">>) -> true;
-valid_role(_) -> false.
+valid_role(Role) ->
+    case lists:member(Role, ff_roles()) of
+        true -> true;
+        false ->
+            if Role =:= <<"Available">> -> true;
+               true -> false
+            end
+    end.
 
-ff_roles(#{<<"name">> := <<"Tank">>}) -> true;
-ff_roles(#{<<"name">> := <<"Healer">>}) -> true;
-ff_roles(#{<<"name">> := <<"Melee DPS">>}) -> true;
-ff_roles(#{<<"name">> := <<"Phys Ranged">>}) -> true;
-ff_roles(#{<<"name">> := <<"Caster DPS">>}) -> true;
-ff_roles(_) -> false.
+ff_named_role(#{<<"name">> := Name}) ->
+    lists:member(Name, ff_roles()).
 
 get_username(#{<<"user">> := #{<<"username">> := Username}}) -> Username.
 
@@ -96,3 +113,71 @@ get_role_id(GuildId, RoleName, Api) ->
 unset_role(UserId, GuildId, RoleName, Api) ->
     RoleId = get_role_id(GuildId, RoleName, Api),
     discord_api:remove_member_role(Api, GuildId, UserId, RoleId).
+
+create_role_functions(Roles) ->
+    FindAvailable = fun(#{<<"name">> := Name}) -> Name =:= <<"Available">> end,
+    [#{<<"id">> := AvailableId}] = lists:filter(FindAvailable, Roles),
+    NamedRoles = lists:filter(fun ff_named_role/1, Roles),
+    NamedLookup = maps:from_list([{Id, Name} ||
+                                  #{<<"id">> := Id, <<"name">> := Name}
+                                  <- NamedRoles]),
+    NameRoles = fun(X) -> maps:get(X, NamedLookup) end,
+    IdRoles = lists:map(fun(#{<<"id">> := Id}) -> Id end, NamedRoles),
+    FFn = fun(X) -> lists:member(X, IdRoles) end,
+    FilterFn = fun(#{<<"roles">> := R0}) -> lists:member(AvailableId, R0) end,
+    MapFn = fun(#{<<"nick">> := Nick, <<"roles">> := Roles0})
+                  when Nick =/= null ->
+                    {Nick, lists:map(NameRoles, lists:filter(FFn, Roles0))};
+               (#{<<"user">> := #{<<"username">> := Username},
+                  <<"roles">> := Roles0}) ->
+                    {Username, lists:map(NameRoles, lists:filter(FFn, Roles0))}
+            end,
+    {FilterFn, MapFn}.
+
+random_sort(L) ->
+    [Y || {_,Y} <- lists:sort([{rand:uniform(), N} || N <- L])].
+
+build_statics([]) -> [[]];
+build_statics([{Name, Roles}|Rest]) ->
+    Children = build_statics(Rest),
+    NewGroups = lists:map(fun(R) -> group_add(Name, R, Children) end, Roles),
+    Join = fun(X, Acc) -> X ++ Acc end,
+    lists:filter(fun valid_group/1, lists:foldl(Join, [], NewGroups)).
+
+group_add(_Name, _Role, []) -> [];
+group_add(Name, Role, [H|T]) ->
+    [[{Name, Role}|H]|group_add(Name, Role, T)].
+
+valid_group(G) ->
+    Tanks = lists:filter(fun({_, X}) -> <<"Tank">> =:= X end, G),
+    Healers = lists:filter(fun({_, X}) -> <<"Healer">> =:= X end, G),
+    Melee = lists:filter(fun({_, X}) -> <<"Melee DPS">> =:= X end, G),
+    Ranged = lists:filter(fun({_, X}) -> <<"Ranged DPS">> =:= X end, G),
+    Caster = lists:filter(fun({_, X}) -> <<"Caster DPS">> =:= X end, G),
+    length(Tanks) < 3 andalso length(Healers) < 3 andalso length(Melee) < 3
+    andalso length(Ranged) < 3 andalso length(Caster) < 3
+    andalso length(Melee) + length(Ranged) + length(Caster) < 4.
+
+top_scoring([]) -> [];
+top_scoring(Groups) ->
+    [{S, G}|Rest] = lists:reverse(
+                      lists:keysort(1, lists:map(fun score_group/1, Groups))),
+    [G|lists:map(fun({_, X}) -> X end,
+                 lists:takewhile(fun({X, _}) -> X =:= S end, Rest))].
+
+score_group(Group) ->
+    {score_group_(Group), Group}.
+
+score_group_([]) -> 0;
+score_group_([{_, <<"Tank">>}|Rest]) -> 7 + score_group_(Rest);
+score_group_([{_, <<"Healer">>}|Rest]) -> 6 + score_group_(Rest);
+score_group_([{_, _}|Rest]) -> 5 + score_group_(Rest).
+
+render_static(Static) ->
+    Header = case length(Static) of
+                8 -> <<"Full Group">>;
+                _ -> <<"Partial Group">>
+            end,
+    MapFn = fun({Name, Role}) -> <<"  ", Name/binary, " - ", Role/binary>> end,
+    Members = binary_join(lists:join(<<"\n">>, lists:map(MapFn, Static))),
+    <<Header/binary, "\n\n", Members/binary>>.
