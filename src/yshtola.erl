@@ -56,8 +56,8 @@ role_members(Api, GuildId) ->
     end,
     maps:from_list(lists:map(Fn, FFRoles)).
 
-ff_roles() -> [<<"Tank">>, <<"Healer">>, <<"Melee DPS">>, <<"Phys Ranged">>,
-               <<"Caster DPS">>].
+ff_roles() -> [<<"Tank">>, <<"HoT Healer">>, <<"Shield Healer">>,
+               <<"Melee DPS">>, <<"Phys Ranged">>, <<"Caster DPS">>].
 
 valid_role(Role) ->
     case lists:member(Role, ff_roles()) of
@@ -85,11 +85,12 @@ binary_join(L) ->
 
 build_roles_reply(RoleToMember) ->
     R0 = build_role_reply(<<"Tank">>, RoleToMember),
-    R1 = build_role_reply(<<"Healer">>, RoleToMember),
-    R2 = build_role_reply(<<"Melee DPS">>, RoleToMember),
-    R3 = build_role_reply(<<"Phys Ranged">>, RoleToMember),
-    R4 = build_role_reply(<<"Caster DPS">>, RoleToMember),
-    binary_join([R0, R1, R2, R3, R4]).
+    R1 = build_role_reply(<<"HoT Healer">>, RoleToMember),
+    R2 = build_role_reply(<<"Shield Healer">>, RoleToMember),
+    R3 = build_role_reply(<<"Melee DPS">>, RoleToMember),
+    R4 = build_role_reply(<<"Phys Ranged">>, RoleToMember),
+    R5 = build_role_reply(<<"Caster DPS">>, RoleToMember),
+    binary_join([R0, R1, R2, R3, R4, R5]).
 
 build_role_reply(Role, RoleToMember) ->
     case maps:get(Role, RoleToMember, undefined) of
@@ -150,12 +151,18 @@ group_add(Name, Role, [H|T]) ->
 
 valid_group(G) ->
     Tanks = lists:filter(fun({_, X}) -> <<"Tank">> =:= X end, G),
-    Healers = lists:filter(fun({_, X}) -> <<"Healer">> =:= X end, G),
+    HoTHealers = lists:filter(fun({_, X}) -> <<"HoT Healer">> =:= X end, G),
+    ShieldHealers = lists:filter(
+        fun({_, X}) -> <<"Shield Healer">> =:= X end, G),
     Melee = lists:filter(fun({_, X}) -> <<"Melee DPS">> =:= X end, G),
     Ranged = lists:filter(fun({_, X}) -> <<"Ranged DPS">> =:= X end, G),
     Caster = lists:filter(fun({_, X}) -> <<"Caster DPS">> =:= X end, G),
-    length(Tanks) < 3 andalso length(Healers) < 3 andalso length(Melee) < 3
-    andalso length(Ranged) < 3 andalso length(Caster) < 3
+    length(Tanks) < 3
+    andalso length(HoTHealers) < 2
+    andalso length(ShieldHealers) < 2
+    andalso length(Melee) < 3
+    andalso length(Ranged) < 3
+    andalso length(Caster) < 3
     andalso length(Melee) + length(Ranged) + length(Caster) < 4.
 
 top_scoring([]) -> [];
@@ -170,7 +177,8 @@ score_group(Group) ->
 
 score_group_([]) -> 0;
 score_group_([{_, <<"Tank">>}|Rest]) -> 7 + score_group_(Rest);
-score_group_([{_, <<"Healer">>}|Rest]) -> 6 + score_group_(Rest);
+score_group_([{_, <<"HoT Healer">>}|Rest]) -> 6 + score_group_(Rest);
+score_group_([{_, <<"Shield Healer">>}|Rest]) -> 6 + score_group_(Rest);
 score_group_([{_, _}|Rest]) -> 5 + score_group_(Rest).
 
 render_static(Static) ->
