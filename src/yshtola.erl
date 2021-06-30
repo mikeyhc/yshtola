@@ -189,13 +189,19 @@ find_missing_roles(Current) ->
 
 find_missing_roles([], Needed) -> Needed;
 find_missing_roles([H|T], Needed) ->
-    find_missing_roles(T, lists:delete(H, Needed)).
+    Role = case H of
+               <<"Melee DPS">> -> <<"DPS">>;
+               <<"Phys Ranged">> -> <<"DPS">>;
+               <<"Caster DPS">> -> <<"DPS">>;
+               R -> R
+           end,
+    find_missing_roles(T, lists:delete(Role, Needed)).
 
 render_static(Static) ->
     Header = case length(Static) of
-                8 -> <<"Full Party">>;
-                _ -> <<"Light Party">>
-            end,
+                 8 -> <<"Full Party">>;
+                 _ -> <<"Light Party">>
+             end,
     MapFn = fun({Name, Role}) -> <<"  ", Name/binary, " - ", Role/binary>> end,
     Members = binary_join(lists:join(<<"\n">>, lists:map(MapFn, Static))),
     case find_missing_roles(lists:map(fun({_, Role}) -> Role end, Static)) of
