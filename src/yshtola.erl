@@ -181,11 +181,29 @@ score_group_([{_, <<"HoT Healer">>}|Rest]) -> 6 + score_group_(Rest);
 score_group_([{_, <<"Shield Healer">>}|Rest]) -> 6 + score_group_(Rest);
 score_group_([{_, _}|Rest]) -> 5 + score_group_(Rest).
 
+find_missing_roles(Current) ->
+    Needed = [<<"Tank">>, <<"Tank">>,
+              <<"Shield Healer">>, <<"HoT Healer">>,
+              <<"DPS">>, <<"DPS">>, <<"DPS">>, <<"DPS">>],
+    find_missing_roles(Current, Needed).
+
+find_missing_roles([], Needed) -> Needed;
+find_missing_roles([H|T], Needed) ->
+    find_missing_roles(T, lists:delete(H, Needed)).
+
 render_static(Static) ->
     Header = case length(Static) of
-                8 -> <<"Full Group">>;
-                _ -> <<"Partial Group">>
+                8 -> <<"Full Party">>;
+                _ -> <<"Light Party">>
             end,
     MapFn = fun({Name, Role}) -> <<"  ", Name/binary, " - ", Role/binary>> end,
     Members = binary_join(lists:join(<<"\n">>, lists:map(MapFn, Static))),
-    <<Header/binary, "\n\n", Members/binary>>.
+    case find_missing_roles(lists:map(fun({_, Role}) -> Role end, Static)) of
+        [] -> <<Header/binary, "\n", Members/binary>>;
+        MissingRoles ->
+            MapFn2 = fun(Role) -> <<"  ", Role/binary>> end,
+            Missing = binary_join(lists:join(<<"\n">>,
+                                             lists:map(MapFn2, MissingRoles))),
+            <<Header/binary, "\n", Members/binary, "\n\nMissing\n",
+              Missing/binary>>
+    end.
